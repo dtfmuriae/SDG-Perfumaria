@@ -14,6 +14,16 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# Função auxiliar para formatar texto de data do banco para DD/MM/AAAA
+def formatar_data_br(data_str):
+    if not data_str:
+        return ""
+    try:
+        dt = datetime.strptime(str(data_str).split()[0], "%Y-%m-%d")
+        return dt.strftime("%d/%m/%Y")
+    except Exception:
+        return data_str
+
 # Inicializar Banco de Dados SQLite local
 def init_db():
     conn = sqlite3.connect("perfumaria.db")
@@ -104,14 +114,18 @@ if menu == "🔔 Central de Avisos & IA":
             
             if alertas:
                 for item in alertas:
-                    with st.expander(f"📦 {item['nome']} - {item['produto']} (Resta aprox. {item['dias_restantes']} dias)"):
-                        st.write(f"*Telefone:* {item['telefone']} | *Preferências:* {item['preferencias'] or 'Não informado'}")
+                    data_compra_br = formatar_data_br(item['data_venda'])
+                    data_termino_br = item['dt_termino'].strftime("%d/%m/%Y")
+                    
+                    with st.expander(f"📦 {item['nome']} - {item['produto']} (Término previsto: {data_termino_br} | Faltam ~{item['dias_restantes']} dias)"):
+                        st.write(f"*Data da Compra:* {data_compra_br} | *Telefone:* {item['telefone']}")
+                        st.write(f"*Preferências:* {item['preferencias'] or 'Não informado'}")
                         
                         msg = item['mensagem_ia']
                         if not msg:
                             if st.button("Gerar Mensagem com Gemini", key=f"btn_ia_{item['id']}"):
                                 prompt = (f"Escreva uma mensagem curta, acolhedora e calorosa de WhatsApp para a cliente {item['nome']}. "
-                                          f"Ela comprou o produto {item['produto']} e ele deve estar terminando nos próximos dias. "
+                                          f"Ela comprou o produto {item['produto']} em {data_compra_br} e a previsão de término é por agora. "
                                           f"Preferências dela: {item['preferencias']}. Sugira a reposição com carinho. Máximo 3 frases, use emojis sutis.")
                                 msg = gerar_texto_gemini(prompt)
                                 c = conn.cursor()
@@ -142,9 +156,10 @@ if menu == "🔔 Central de Avisos & IA":
         
         if aniversariantes:
             for item in aniversariantes:
-                st.write(f"🎉 *{item['nome']}* faz aniversário hoje!")
+                nasc_br = formatar_data_br(item['nascimento'])
+                st.write(f"🎉 *{item['nome']}* faz aniversário hoje! (Nascimento: {nasc_br})")
                 prompt_niver = (f"Crie uma mensagem muito carinhosa e elegante de parabéns no WhatsApp para a cliente {item['nome']}. "
-                                f"Ela é cliente da nossa perfumaria e cosméticos. Dê um desconto de presente na semana do aniversário dela. Máximo 3 frases.")
+                                f"Ela é cliente da nossa loja de perfumaria e cosméticos. Dê um desconto ou mimo de presente na semana do aniversário dela. Máximo 3 frases.")
                 if st.button("Gerar Mensagem de Aniversário", key=f"niver_{item['id']}"):
                     texto_niver = gerar_texto_gemini(prompt_niver)
                     st.text_area("Mensagem:", texto_niver)
@@ -173,10 +188,12 @@ elif menu == "💳 Vendas a Prazo / Crediário":
         st.metric("Total em Aberto / A Receber", f"R$ {total_pendente:,.2f}")
         
         for _, row in df_crediario.iterrows():
+            venc_br = formatar_data_br(row['vencimento'])
+            
             col1, col2, col3, col4 = st.columns([3, 2, 2, 3])
             col1.write(f"*{row['cliente']}* ({row['produto']})")
             col2.write(f"R$ {row['valor']:.2f}")
-            col3.write(f"Venc: {row['vencimento']} ({row['status_pagamento']})")
+            col3.write(f"Venc: {venc_br} ({row['status_pagamento']})")
             
             with col4:
                 if row['status_pagamento'] == 'Pendente':
@@ -188,7 +205,7 @@ elif menu == "💳 Vendas a Prazo / Crediário":
                     
                     tel = "".join(filter(str.isdigit, row['telefone']))
                     msg_cob = (f"Olá, {row['cliente']}! Tudo bem? Passando para lembrar da sua parcela de R$ {row['valor']:.2f} "
-                               f"com vencimento em {row['vencimento']}. Segue nossa chave Pix para sua comodidade. ✨")
+                               f"com vencimento em {venc_br}. Segue nossa chave Pix para sua comodidade. ✨")
                     link = f"https://wa.me/55{tel}?text={urllib.parse.quote(msg_cob)}"
                     st.link_button("Lembrete WhatsApp", link)
                 else:
@@ -210,13 +227,17 @@ elif menu == "🛍️ Nova Venda":
         with st.form("form_venda"):
             cliente_sel = st.selectbox("Cliente", clientes['nome'].tolist())
             produto_sel = st.selectbox("Produto", produtos['nome'].tolist())
-            data_venda = st.date_input("Data da Venda", date.today())
+            
+            # Calendário no formato DD/MM/YYYY
+            data_venda = st.date_input("Data da Venda", date.today(), format="DD/MM/YYYY")
             
             prod_info = produtos[produtos['nome'] == produto_sel].iloc[0]
             valor = st.number_input("Valor Total (R$)", value=float(prod_info['preco']))
             
             tipo_pagamento = st.radio("Condição de Pagamento", ["À Vista", "A Prazo"])
-            vencimento = st.date_input("Data de Vencimento (se a prazo)", date.today() + timedelta(days=30))
+            
+            # Vencimento no formato DD/MM/YYYY
+            vencimento = st.date_input("Data de Vencimento (se a prazo)", date.today() + timedelta(days=30), format="DD/MM/YYYY")
             
             submit = st.form_submit_button("Salvar Venda")
             if submit:
@@ -238,7 +259,9 @@ elif menu == "👥 Cadastrar Clientes":
     with st.form("form_cliente"):
         nome = st.text_input("Nome Completo")
         telefone = st.text_input("WhatsApp (ex: 32999998888)")
-        nascimento = st.date_input("Data de Nascimento", date(1995, 1, 1))
+        
+        # Calendário de nascimento no formato DD/MM/YYYY
+        nascimento = st.date_input("Data de Nascimento", date(1995, 1, 1), format="DD/MM/YYYY")
         preferencias = st.text_area("Preferências / Perfil (ex: fragrâncias doces, pele seca)")
         
         if st.form_submit_button("Cadastrar"):
