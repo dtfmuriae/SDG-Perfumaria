@@ -261,7 +261,7 @@ elif menu == "👥 Cadastrar Clientes":
         telefone = st.text_input("WhatsApp (ex: 32999998888)")
         
         # Calendário de nascimento no formato DD/MM/YYYY
-        nascimento = st.date_input("Data de Nascimento", date(1995, 1, 1), format="DD/MM/YYYY")
+        nascimento = st.date_input("Data de Nascimento", date(1995, 1, 1), min_value=date(1920, 1, 1), max_value=date.today(), format="DD/MM/YYYY")
         preferencias = st.text_area("Preferências / Perfil (ex: fragrâncias doces, pele seca)")
         
         if st.form_submit_button("Cadastrar"):
